@@ -1,9 +1,11 @@
 # Æthernet Compression
 
 `ae-compression` is an experimental tiny-message dictionary modeler for C++20
-projects. It currently creates a hierarchy of reusable symbols and estimates
-how well that symbol stream should compress after an entropy coder such as
-arithmetic coding. It is not yet a final bitstream compressor.
+projects. It creates a hierarchy of reusable symbols and can encode the
+resulting symbol payload with an arithmetic coder adapted from Project Nayuki's
+MIT-licensed reference implementation. It is not yet a complete self-contained
+bitstream compressor because metadata for the frequency table and rule layout is
+still stored separately.
 
 The intended shape is asymmetric: model building may be slow and expensive on a
 desktop or build server, while model expansion on a constrained target device
@@ -34,6 +36,7 @@ target_link_libraries(app PRIVATE ae-compression::ae-compression)
 auto input = std::vector<std::uint8_t>{'a', 'b', 'c', 'a', 'b', 'c'};
 auto model = ae::compression::Compress(input);
 auto stats = ae::compression::Analyze(model, input.size());
+auto arithmetic_payload = ae::compression::arithmetic::EncodeModelPayload(model);
 auto output = ae::compression::Decompress(model);
 ```
 
@@ -64,9 +67,14 @@ The current experimental frames start with `AEC1` and a mode byte:
 
 The public `Encode` function uses raw fallback when the serialized dictionary
 model would not be smaller than a raw frame. This is a convenience wrapper for
-testing, not the final compression story. The key output today is
-`Analyze(model, original_size)`, which estimates the result after entropy coding
-the generated symbol streams.
+testing, not the final compression story. The key outputs today are
+`Analyze(model, original_size)`, which estimates entropy-coded size, and
+`arithmetic::EncodeModelPayload(model)`, which produces an actual arithmetic
+coded payload for the generated symbols.
+
+The arithmetic backend is adapted from
+[Project Nayuki's Reference arithmetic coding](https://github.com/nayuki/Reference-arithmetic-coding)
+under the MIT license.
 
 ## Build And Test
 

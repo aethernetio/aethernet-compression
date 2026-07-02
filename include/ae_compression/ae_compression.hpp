@@ -7,10 +7,10 @@
 #ifndef AE_COMPRESSION_AE_COMPRESSION_HPP_
 #define AE_COMPRESSION_AE_COMPRESSION_HPP_
 
+#include "ae_compression/arithmetic.hpp"
 #include "ae_compression/compressor.hpp"
 #include "ae_compression/decoder.hpp"
 #include "ae_compression/format.hpp"
 #include "ae_compression/model.hpp"
 
 #endif  // AE_COMPRESSION_AE_COMPRESSION_HPP_
-

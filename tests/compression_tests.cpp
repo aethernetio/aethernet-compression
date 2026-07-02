@@ -26,6 +26,17 @@ void ExpectRoundTrip(std::vector<std::uint8_t> const& input) {
   auto frame = ae::compression::Encode(input);
   auto decoded_frame = ae::compression::Decode(frame);
   assert(decoded_frame == input);
+
+  auto flattened = ae::compression::arithmetic::FlattenModel(model);
+  if (!flattened.empty()) {
+    auto frequencies = ae::compression::arithmetic::BuildFrequencyModel(
+        flattened, ae::compression::arithmetic::AlphabetSize(model));
+    auto arithmetic_frame =
+        ae::compression::arithmetic::Encode(flattened, frequencies);
+    auto decoded_symbols = ae::compression::arithmetic::Decode(
+        arithmetic_frame, flattened.size(), frequencies);
+    assert(decoded_symbols == flattened);
+  }
 }
 
 void TestBasicRoundTrips() {

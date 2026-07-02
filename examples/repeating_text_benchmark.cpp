@@ -58,7 +58,8 @@ int main() {
   auto sizes = std::vector<std::size_t>{32, 64, 128, 256, 512, 1024, 2048, 4096};
 
   std::cout << "size,model_rules,top_symbols,total_symbols,estimate_bytes,"
-               "estimate_ratio,packed_model_bytes,packed_model_ratio,"
+               "estimate_ratio,arith_payload_bytes,arith_payload_ratio,"
+               "packed_model_bytes,packed_model_ratio,"
                "zlib9_bytes,zlib9_ratio,model_ms,zlib_us\n";
 
   for (auto size : sizes) {
@@ -69,6 +70,8 @@ int main() {
     auto model_end = std::chrono::steady_clock::now();
 
     auto packed_model = ae::compression::PackDictionary(model);
+    auto arithmetic_payload =
+        ae::compression::arithmetic::EncodeModelPayload(model);
     auto decoded = ae::compression::Decompress(model);
     if (decoded != input) {
       throw std::runtime_error{"model roundtrip failed"};
@@ -93,6 +96,8 @@ int main() {
               << stats.estimated_total_bytes << ',' << std::fixed
               << std::setprecision(2)
               << Ratio(input.size(), stats.estimated_total_bytes) << ','
+              << arithmetic_payload.size() << ','
+              << Ratio(input.size(), arithmetic_payload.size()) << ','
               << packed_model.size() << ','
               << Ratio(input.size(), packed_model.size()) << ',' << zlib.size()
               << ',' << Ratio(input.size(), zlib.size()) << ',' << model_ms
