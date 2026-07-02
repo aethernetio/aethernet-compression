@@ -41,8 +41,12 @@ if(AE_COMPRESSION_BUILD_ZLIB_BENCHMARK)
     target_link_libraries(
       ae-compression-repeating-benchmark
       PRIVATE ae-compression::ae-compression ZLIB::ZLIB)
+    add_executable(ae-compression-file-benchmark examples/file_benchmark.cpp)
+    target_link_libraries(
+      ae-compression-file-benchmark
+      PRIVATE ae-compression::ae-compression ZLIB::ZLIB)
   else()
-    message(STATUS "ZLIB not found; ae-compression-repeating-benchmark will not be built")
+    message(STATUS "ZLIB not found; zlib comparison benchmarks will not be built")
   endif()
 endif()
 

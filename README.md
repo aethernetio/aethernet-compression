@@ -91,6 +91,13 @@ cmake --build build --target ae-compression-repeating-benchmark
 ./build/ae-compression-repeating-benchmark
 ```
 
+Real-file analysis with zlib level 9 comparison:
+
+```bash
+cmake --build build --target ae-compression-file-benchmark
+./build/ae-compression-file-benchmark README.md include/ae_compression/compressor.hpp
+```
+
 ## Naming
 
 Suggested repository name: `aethernet-compression`.
