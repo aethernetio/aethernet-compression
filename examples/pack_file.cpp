@@ -56,12 +56,12 @@ int main(int argc, char** argv) {
     auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(finished -
                                                                     started);
     std::cout << "input bytes: " << input.size() << "\n";
-    std::cout << "packed bytes: " << frame.size() << "\n";
+    std::cout << "serialized model bytes: " << frame.size() << "\n";
     std::cout << "rules: " << stats.rule_count << "\n";
     std::cout << "top-level symbols: " << stats.top_level_symbols << "\n";
     std::cout << "estimated entropy bytes: " << stats.estimated_total_bytes
               << "\n";
-    std::cout << "compress time: " << ms.count() << " ms\n";
+    std::cout << "model build time: " << ms.count() << " ms\n";
   } catch (std::exception const& e) {
     std::cerr << e.what() << "\n";
     return 1;

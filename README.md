@@ -1,18 +1,23 @@
 # Æthernet Compression
 
-`ae-compression` is a tiny-message dictionary compressor for C++20 projects.
-It is designed for cases where compression can be slow and expensive on a
-desktop or build server, while decompression must stay small enough for a
-constrained target device.
+`ae-compression` is an experimental tiny-message dictionary modeler for C++20
+projects. It currently creates a hierarchy of reusable symbols and estimates
+how well that symbol stream should compress after an entropy coder such as
+arithmetic coding. It is not yet a final bitstream compressor.
+
+The intended shape is asymmetric: model building may be slow and expensive on a
+desktop or build server, while model expansion on a constrained target device
+stays small and predictable.
 
 The library is standalone: it does not depend on the Æthernet client library.
 
 ## Use Cases
 
-- Compress very small repeated messages where general-purpose compressors have
+- Analyze very small repeated messages where general-purpose compressors have
   too much framing overhead.
-- Pre-compress binary serialized client state on a powerful machine and ship a
-  compact frame to a device that only needs decompression.
+- Build a compact dictionary model for binary serialized client state on a
+  powerful machine, then ship a future entropy-coded frame to a device that only
+  needs decompression.
 - Experiment with dictionary structures before promoting a format into an
   embedded protocol.
 
@@ -27,12 +32,15 @@ target_link_libraries(app PRIVATE ae-compression::ae-compression)
 #include <ae_compression/ae_compression.hpp>
 
 auto input = std::vector<std::uint8_t>{'a', 'b', 'c', 'a', 'b', 'c'};
-auto frame = ae::compression::Encode(input);
-auto output = ae::compression::Decode(frame);
+auto model = ae::compression::Compress(input);
+auto stats = ae::compression::Analyze(model, input.size());
+auto output = ae::compression::Decompress(model);
 ```
 
-For a target that only needs decompression, include
-`ae_compression/decoder.hpp` and `ae_compression/format.hpp`.
+For a target that only needs model expansion, include
+`ae_compression/decoder.hpp`. `ae_compression/format.hpp` currently stores the
+dictionary model in a simple self-describing frame; it is useful for tests and
+experiments, but it is not the final entropy-coded representation.
 
 ## Design
 
@@ -43,20 +51,22 @@ The compressor builds a hierarchy of dictionary rules:
 3. Replace non-overlapping occurrences with a rule symbol.
 4. Inline orphan or unprofitable rules and reindex the model.
 
-The compressor is intentionally greedy and slow. That is acceptable for the
+The model builder is intentionally greedy and slow. That is acceptable for the
 intended build-server/offline packing path. The decoder only expands a validated
 acyclic rule graph.
 
 ## Wire Format
 
-Frames start with `AEC1` and a mode byte:
+The current experimental frames start with `AEC1` and a mode byte:
 
 - `0`: raw payload
-- `1`: dictionary-compressed model
+- `1`: serialized dictionary model
 
-The public `Encode` function uses raw fallback when the dictionary frame would
-not be smaller than a raw frame. `PackDictionary` can be used when a dictionary
-frame is required regardless of size.
+The public `Encode` function uses raw fallback when the serialized dictionary
+model would not be smaller than a raw frame. This is a convenience wrapper for
+testing, not the final compression story. The key output today is
+`Analyze(model, original_size)`, which estimates the result after entropy coding
+the generated symbol streams.
 
 ## Build And Test
 
@@ -71,6 +81,14 @@ Example packer:
 ```bash
 cmake --build build --target ae-compression-pack
 ./build/ae-compression-pack input.bin output.aec
+```
+
+Repeating-text analysis with zlib level 9 comparison:
+
+```bash
+cmake -S . -B build -DAE_COMPRESSION_BUILD_ZLIB_BENCHMARK=ON
+cmake --build build --target ae-compression-repeating-benchmark
+./build/ae-compression-repeating-benchmark
 ```
 
 ## Naming
@@ -91,4 +109,3 @@ Other reasonable repository names if you want a narrower positioning:
 ## License
 
 Apache License 2.0.
-
