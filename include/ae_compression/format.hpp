@@ -10,10 +10,12 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <span>
 #include <stdexcept>
 #include <vector>
 
+#include "ae_compression/arithmetic.hpp"
 #include "ae_compression/decoder.hpp"
 #include "ae_compression/model.hpp"
 
@@ -27,6 +29,7 @@ class FormatError : public std::runtime_error {
 enum class FrameMode : std::uint8_t {
   kRaw = 0,
   kDictionary = 1,
+  kArithmeticDictionary = 2,
 };
 
 struct PackOptions {
@@ -134,6 +137,9 @@ inline FrameMode ReadHeader(std::span<Byte const> data, std::size_t& pos) {
   if (mode == static_cast<Byte>(FrameMode::kDictionary)) {
     return FrameMode::kDictionary;
   }
+  if (mode == static_cast<Byte>(FrameMode::kArithmeticDictionary)) {
+    return FrameMode::kArithmeticDictionary;
+  }
   throw FormatError{"unknown ae-compression frame mode"};
 }
 
@@ -158,6 +164,51 @@ inline std::vector<Byte> PackRaw(std::span<Byte const> data) {
   return out;
 }
 
+inline std::vector<Byte> PackArithmeticDictionary(Model const& model) {
+  auto const flattened = arithmetic::FlattenModel(model);
+  auto frequencies = std::vector<std::uint32_t>(
+      static_cast<std::size_t>(arithmetic::AlphabetSize(model)), 0);
+  for (auto symbol : flattened) {
+    if (symbol >= frequencies.size()) {
+      throw FormatError{"model symbol exceeds arithmetic alphabet"};
+    }
+    ++frequencies[symbol];
+  }
+
+  auto payload = std::vector<Byte>{};
+  if (!flattened.empty()) {
+    payload = arithmetic::Encode(flattened,
+                                 arithmetic::FrequencyModel{frequencies});
+  }
+
+  auto out = std::vector<Byte>{};
+  detail::WriteHeader(out, FrameMode::kArithmeticDictionary);
+  detail::WriteUvarint(out, model.rules.size());
+  detail::WriteUvarint(out, model.stream.size());
+  for (auto const& rule : model.rules) {
+    detail::WriteUvarint(out, rule.symbols.size());
+  }
+
+  auto non_zero_count = std::size_t{0};
+  for (auto frequency : frequencies) {
+    if (frequency != 0) {
+      ++non_zero_count;
+    }
+  }
+  detail::WriteUvarint(out, non_zero_count);
+  for (std::size_t i = 0; i < frequencies.size(); ++i) {
+    if (frequencies[i] == 0) {
+      continue;
+    }
+    detail::WriteSymbol(out, static_cast<Symbol>(i));
+    detail::WriteUvarint(out, frequencies[i]);
+  }
+
+  detail::WriteUvarint(out, payload.size());
+  out.insert(out.end(), payload.begin(), payload.end());
+  return out;
+}
+
 inline Model UnpackDictionary(std::span<Byte const> data) {
   std::size_t pos = 0;
   auto const mode = detail::ReadHeader(data, pos);
@@ -178,6 +229,77 @@ inline Model UnpackDictionary(std::span<Byte const> data) {
   return model;
 }
 
+inline Model UnpackArithmeticDictionary(std::span<Byte const> data) {
+  std::size_t pos = 0;
+  auto const mode = detail::ReadHeader(data, pos);
+  if (mode != FrameMode::kArithmeticDictionary) {
+    throw FormatError{"frame is not arithmetic dictionary-compressed"};
+  }
+
+  auto model = Model{};
+  auto const rule_count = detail::ReadUvarint(data, pos);
+  auto const stream_size = detail::ReadUvarint(data, pos);
+  model.rules.reserve(static_cast<std::size_t>(rule_count));
+
+  auto total_symbol_count = stream_size;
+  auto rule_lengths = std::vector<std::uint64_t>{};
+  rule_lengths.reserve(static_cast<std::size_t>(rule_count));
+  for (std::uint64_t i = 0; i < rule_count; ++i) {
+    auto const rule_size = detail::ReadUvarint(data, pos);
+    rule_lengths.push_back(rule_size);
+    total_symbol_count += rule_size;
+  }
+
+  auto frequencies = std::vector<std::uint32_t>(
+      static_cast<std::size_t>(kFirstRuleSymbol + rule_count), 0);
+  auto const non_zero_count = detail::ReadUvarint(data, pos);
+  auto frequency_total = std::uint64_t{0};
+  for (std::uint64_t i = 0; i < non_zero_count; ++i) {
+    auto const symbol = detail::ReadSymbol(data, pos);
+    auto const frequency = detail::ReadUvarint(data, pos);
+    if (symbol >= frequencies.size()) {
+      throw FormatError{"arithmetic frequency symbol out of range"};
+    }
+    if (frequency == 0 ||
+        frequency > std::numeric_limits<std::uint32_t>::max()) {
+      throw FormatError{"bad arithmetic frequency"};
+    }
+    if (frequencies[symbol] != 0) {
+      throw FormatError{"duplicate arithmetic frequency"};
+    }
+    frequencies[symbol] = static_cast<std::uint32_t>(frequency);
+    frequency_total += frequency;
+  }
+  if (frequency_total != total_symbol_count) {
+    throw FormatError{"arithmetic frequency total mismatch"};
+  }
+
+  auto const payload_size = detail::ReadUvarint(data, pos);
+  if (data.size() - pos != payload_size) {
+    throw FormatError{"arithmetic payload size mismatch"};
+  }
+
+  auto symbols = std::vector<Symbol>{};
+  if (total_symbol_count != 0) {
+    symbols = arithmetic::Decode(
+        data.subspan(pos, static_cast<std::size_t>(payload_size)),
+        static_cast<std::size_t>(total_symbol_count),
+        arithmetic::FrequencyModel{std::move(frequencies)});
+  }
+
+  auto symbol_pos = std::size_t{0};
+  model.stream.assign(symbols.begin(),
+                      symbols.begin() + static_cast<std::ptrdiff_t>(stream_size));
+  symbol_pos += static_cast<std::size_t>(stream_size);
+  for (auto rule_size : rule_lengths) {
+    auto const begin = symbols.begin() + static_cast<std::ptrdiff_t>(symbol_pos);
+    auto const end = begin + static_cast<std::ptrdiff_t>(rule_size);
+    model.rules.push_back(Rule{std::vector<Symbol>{begin, end}});
+    symbol_pos += static_cast<std::size_t>(rule_size);
+  }
+  return model;
+}
+
 inline std::vector<Byte> Decode(std::span<Byte const> data) {
   std::size_t pos = 0;
   auto const mode = detail::ReadHeader(data, pos);
@@ -187,6 +309,10 @@ inline std::vector<Byte> Decode(std::span<Byte const> data) {
       throw FormatError{"raw frame size mismatch"};
     }
     return {data.begin() + static_cast<std::ptrdiff_t>(pos), data.end()};
+  }
+
+  if (mode == FrameMode::kArithmeticDictionary) {
+    return Decompress(UnpackArithmeticDictionary(data));
   }
 
   auto model = Model{};
@@ -205,4 +331,3 @@ inline std::vector<Byte> Decode(std::span<Byte const> data) {
 }  // namespace ae::compression
 
 #endif  // AE_COMPRESSION_FORMAT_HPP_
-

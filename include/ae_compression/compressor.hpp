@@ -74,7 +74,7 @@ class Compressor {
   std::vector<Byte> Encode(std::span<Byte const> data,
                            PackOptions pack_options = {}) const {
     auto model = Compress(data);
-    auto dictionary_frame = PackDictionary(model);
+    auto dictionary_frame = PackArithmeticDictionary(model);
     if (pack_options.raw_fallback) {
       auto raw_frame = PackRaw(data);
       if (raw_frame.size() <= dictionary_frame.size()) {
@@ -495,4 +495,3 @@ inline CompressionStats Analyze(Model const& model, std::size_t original_size) {
 }  // namespace ae::compression
 
 #endif  // AE_COMPRESSION_COMPRESSOR_HPP_
-

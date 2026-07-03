@@ -64,8 +64,9 @@ int main(int argc, char** argv) {
 
   std::cout << "file,size,model_rules,top_symbols,total_symbols,"
                "estimate_bytes,estimate_ratio,arith_payload_bytes,"
-               "arith_payload_ratio,packed_model_bytes,"
-               "packed_model_ratio,zlib9_bytes,zlib9_ratio,model_ms,zlib_us\n"
+               "arith_payload_ratio,arith_frame_bytes,arith_frame_ratio,"
+               "packed_model_bytes,packed_model_ratio,zlib9_bytes,zlib9_ratio,"
+               "model_ms,zlib_us\n"
             << std::flush;
 
   try {
@@ -77,11 +78,15 @@ int main(int argc, char** argv) {
       auto model_end = std::chrono::steady_clock::now();
 
       auto packed_model = ae::compression::PackDictionary(model);
+      auto arithmetic_frame = ae::compression::PackArithmeticDictionary(model);
       auto arithmetic_payload =
           ae::compression::arithmetic::EncodeModelPayload(model);
       auto decoded = ae::compression::Decompress(model);
       if (decoded != input) {
         throw std::runtime_error{"model roundtrip failed"};
+      }
+      if (ae::compression::Decode(arithmetic_frame) != input) {
+        throw std::runtime_error{"arithmetic frame roundtrip failed"};
       }
 
       auto zlib_start = std::chrono::steady_clock::now();
@@ -104,6 +109,8 @@ int main(int argc, char** argv) {
                 << ',' << Ratio(input.size(), stats.estimated_total_bytes)
                 << ',' << arithmetic_payload.size() << ','
                 << Ratio(input.size(), arithmetic_payload.size()) << ','
+                << arithmetic_frame.size() << ','
+                << Ratio(input.size(), arithmetic_frame.size()) << ','
                 << packed_model.size() << ','
                 << Ratio(input.size(), packed_model.size()) << ','
                 << zlib.size() << ',' << Ratio(input.size(), zlib.size()) << ','

@@ -23,6 +23,13 @@ void ExpectRoundTrip(std::vector<std::uint8_t> const& input) {
   auto unpacked = ae::compression::UnpackDictionary(dictionary_frame);
   assert(ae::compression::Decompress(unpacked) == input);
 
+  auto arithmetic_dictionary_frame =
+      ae::compression::PackArithmeticDictionary(model);
+  auto arithmetic_unpacked =
+      ae::compression::UnpackArithmeticDictionary(arithmetic_dictionary_frame);
+  assert(ae::compression::Decompress(arithmetic_unpacked) == input);
+  assert(ae::compression::Decode(arithmetic_dictionary_frame) == input);
+
   auto frame = ae::compression::Encode(input);
   auto decoded_frame = ae::compression::Decode(frame);
   assert(decoded_frame == input);
