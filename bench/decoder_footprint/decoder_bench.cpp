@@ -17,6 +17,8 @@
 #include <brotli/decode.h>
 #elif defined(CODEC_XZ)
 #include <lzma.h>
+#elif defined(CODEC_LZ4_BLOCK)
+#include <lz4.h>
 #elif defined(CODEC_LZ4)
 #include <lz4frame.h>
 #endif
@@ -281,6 +283,18 @@ bool DecodeCodec(std::uint8_t const* input, std::size_t input_size,
   lzma_end(&stream);
   return success;
 }
+#elif defined(CODEC_LZ4_BLOCK)
+bool DecodeCodec(std::uint8_t const* input, std::size_t input_size,
+                 std::uint8_t* output, std::size_t output_size) {
+  if (input_size > static_cast<std::size_t>(std::numeric_limits<int>::max()) ||
+      output_size > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+    return false;
+  }
+  auto const result = LZ4_decompress_safe(
+      reinterpret_cast<char const*>(input), reinterpret_cast<char*>(output),
+      static_cast<int>(input_size), static_cast<int>(output_size));
+  return result == static_cast<int>(output_size);
+}
 #elif defined(CODEC_LZ4)
 bool DecodeCodec(std::uint8_t const* input, std::size_t input_size,
                  std::uint8_t* output, std::size_t output_size) {
@@ -331,6 +345,8 @@ char const* DefaultCodecName() {
   return "brotli";
 #elif defined(CODEC_XZ)
   return "xz";
+#elif defined(CODEC_LZ4_BLOCK)
+  return "lz4_block";
 #elif defined(CODEC_LZ4)
   return "lz4_frame";
 #else
