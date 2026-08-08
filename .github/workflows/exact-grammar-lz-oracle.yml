@@ -1,0 +1,43 @@
+name: exact-grammar-lz-oracle
+
+on:
+  push:
+    branches:
+      - experiment/exact-grammar-lz-oracle
+
+jobs:
+  oracle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run existing tests
+        run: |
+          cmake -S . -B build -DAE_COMPRESSION_BUILD_TESTS=ON
+          cmake --build build --parallel
+          ctest --test-dir build --output-on-failure
+      - name: Run exact oracle self-tests
+        run: |
+          python3 -m py_compile tools/exact_grammar_lz_oracle.py
+          python3 tools/exact_grammar_lz_oracle.py self-test
+      - name: Benchmark selected cases
+        run: |
+          python3 tools/exact_grammar_lz_oracle.py cases \
+            | tee exact-grammar-lz-cases.csv
+      - name: Exhaust binary strings through length 10
+        run: |
+          python3 tools/exact_grammar_lz_oracle.py binary --max-length 10 \
+            | tee exact-grammar-lz-binary.csv
+      - name: Benchmark exact 11-byte blocks
+        run: |
+          python3 tools/exact_grammar_lz_oracle.py blocks \
+            include/ae_compression/compressor.hpp /bin/ls \
+            --block-size 11 --max-blocks 128 \
+            | tee exact-grammar-lz-blocks.csv
+      - uses: actions/upload-artifact@v4
+        with:
+          name: exact-grammar-lz-results
+          path: |
+            exact-grammar-lz-cases.csv
+            exact-grammar-lz-binary.csv
+            exact-grammar-lz-blocks.csv
