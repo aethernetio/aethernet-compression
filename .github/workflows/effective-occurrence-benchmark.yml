@@ -1,0 +1,41 @@
+name: effective-occurrence-benchmark
+
+on:
+  push:
+    branches:
+      - experiment/effective-occurrence-weighting
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install benchmark dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y zlib1g-dev
+          python3 -m pip install --break-system-packages brotli zstandard
+      - name: Build and run experimental tests
+        run: |
+          g++ -std=c++20 -O2 -Wall -Wextra -Werror -Iinclude \
+            tests/effective_occurrence_tests.cpp -o effective-occurrence-tests
+          ./effective-occurrence-tests
+      - name: Build benchmark
+        run: |
+          g++ -std=c++20 -O2 -Wall -Wextra -Werror -Iinclude \
+            examples/effective_occurrence_benchmark.cpp \
+            -o effective-occurrence-benchmark
+      - name: Run AEC benchmark
+        run: |
+          ./effective-occurrence-benchmark \
+            include/ae_compression/compressor.hpp /bin/ls | tee aec-results.csv
+      - name: Run competitor benchmark
+        run: |
+          python3 tools/benchmark_competitors.py | tee competitor-results.csv
+      - uses: actions/upload-artifact@v4
+        with:
+          name: effective-occurrence-results
+          path: |
+            aec-results.csv
+            competitor-results.csv
+            benchmark-data/
