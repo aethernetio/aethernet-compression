@@ -23,6 +23,9 @@ jobs:
           g++ -std=c++20 -O2 -Wall -Wextra -Werror -Iinclude \
             tests/context_arithmetic_tests.cpp -o context-arithmetic-tests
           ./context-arithmetic-tests
+          g++ -std=c++20 -O2 -Wall -Wextra -Werror -Iinclude \
+            tests/prior_residual_tests.cpp -o prior-residual-tests
+          ./prior-residual-tests
       - name: Build benchmarks
         run: |
           g++ -std=c++20 -O2 -Wall -Wextra -Werror -Iinclude \
@@ -31,6 +34,9 @@ jobs:
           g++ -std=c++20 -O2 -Wall -Wextra -Werror -Iinclude \
             examples/context_model_benchmark.cpp \
             -o context-model-benchmark
+          g++ -std=c++20 -O2 -Wall -Wextra -Werror -Iinclude \
+            examples/prior_residual_benchmark.cpp \
+            -o prior-residual-benchmark
       - name: Run AEC benchmark
         run: |
           ./effective-occurrence-benchmark \
@@ -39,6 +45,10 @@ jobs:
         run: |
           ./context-model-benchmark \
             include/ae_compression/compressor.hpp /bin/ls | tee context-results.csv
+      - name: Run global-prior residual benchmark
+        run: |
+          ./prior-residual-benchmark \
+            include/ae_compression/compressor.hpp /bin/ls | tee prior-residual-results.csv
       - name: Run competitor benchmark
         run: |
           python3 tools/benchmark_competitors.py | tee competitor-results.csv
@@ -48,5 +58,6 @@ jobs:
           path: |
             aec-results.csv
             context-results.csv
+            prior-residual-results.csv
             competitor-results.csv
             benchmark-data/
