@@ -65,6 +65,23 @@ void TestNestedMultiplicity() {
   assert(multiplicities[0] == 1000);
 }
 
+std::vector<Byte> MakeCounterexample() {
+  auto counterexample = std::string{"ABCDEFGHIJABCDEFGHIJ"};
+  for (int i = 0; i < 1000; ++i) {
+    counterexample += "ABCDE";
+  }
+  return Bytes(counterexample);
+}
+
+void TestCounterexampleConvergesToSameFrame() {
+  auto input = MakeCounterexample();
+  auto baseline = ae::compression::Compress(input);
+  auto weighted =
+      ae::compression::experimental::CompressEffective(input);
+  assert(ae::compression::PackArithmeticDictionary(baseline) ==
+         ae::compression::PackArithmeticDictionary(weighted));
+}
+
 void TestRoundTrips() {
   auto samples = std::vector<std::vector<Byte>>{};
   samples.push_back(Bytes("abcabcab"));
@@ -76,12 +93,7 @@ void TestRoundTrips() {
     repeated += "ABCDEFGHIJ";
   }
   samples.push_back(Bytes(repeated));
-
-  auto counterexample = std::string{"ABCDEFGHIJABCDEFGHIJ"};
-  for (int i = 0; i < 1000; ++i) {
-    counterexample += "ABCDE";
-  }
-  samples.push_back(Bytes(counterexample));
+  samples.push_back(MakeCounterexample());
 
   for (auto const& input : samples) {
     for (bool effective_finalize : {false, true}) {
@@ -102,5 +114,6 @@ void TestRoundTrips() {
 int main() {
   TestEffectiveCount();
   TestNestedMultiplicity();
+  TestCounterexampleConvergesToSameFrame();
   TestRoundTrips();
 }
