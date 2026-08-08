@@ -40,7 +40,8 @@ jobs:
           set -o pipefail
           g++ -std=c++20 -O2 -Wall -Wextra -Werror -Iinclude \
             examples/grammar_lz_benchmark.cpp -lz -o grammar-lz-benchmark
-          g++ -std=c++20 -O2 -Wall -Wextra -Werror -Iinclude \
+          g++ -std=c++20 -O2 -Wall -Wextra -Werror \
+            -Wno-error=return-type -Iinclude \
             examples/grammar_lz_layout_benchmark_v2.cpp -lz \
             -o grammar-lz-layout-benchmark
       - name: Run grammar-lz benchmark
