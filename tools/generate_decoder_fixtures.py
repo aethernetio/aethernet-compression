@@ -10,6 +10,7 @@ import zlib
 from pathlib import Path
 
 import brotli
+import lz4.block
 import lz4.frame
 import zstandard
 
@@ -70,6 +71,12 @@ def main() -> int:
             format=lzma.FORMAT_XZ,
             filters=[{"id": lzma.FILTER_LZMA2, "dict_size": 65536}],
         ),
+        "lz4_block": lz4.block.compress(
+            original,
+            mode="high_compression",
+            compression=12,
+            store_size=False,
+        ),
         "lz4_frame": lz4.frame.compress(
             original,
             compression_level=16,
@@ -82,6 +89,9 @@ def main() -> int:
     assert brotli.decompress(fixtures["brotli_11"]) == original
     assert lzma.decompress(fixtures["xz_default_6"]) == original
     assert lzma.decompress(fixtures["xz_64k"]) == original
+    assert lz4.block.decompress(
+        fixtures["lz4_block"], uncompressed_size=len(original)
+    ) == original
     assert lz4.frame.decompress(fixtures["lz4_frame"]) == original
 
     (arguments.output / "original.bin").write_bytes(original)
