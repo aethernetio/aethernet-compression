@@ -20,15 +20,25 @@ jobs:
           g++ -std=c++20 -O2 -Wall -Wextra -Werror -Iinclude \
             tests/effective_occurrence_tests.cpp -o effective-occurrence-tests
           ./effective-occurrence-tests
-      - name: Build benchmark
+          g++ -std=c++20 -O2 -Wall -Wextra -Werror -Iinclude \
+            tests/context_arithmetic_tests.cpp -o context-arithmetic-tests
+          ./context-arithmetic-tests
+      - name: Build benchmarks
         run: |
           g++ -std=c++20 -O2 -Wall -Wextra -Werror -Iinclude \
             examples/effective_occurrence_benchmark.cpp \
             -o effective-occurrence-benchmark
+          g++ -std=c++20 -O2 -Wall -Wextra -Werror -Iinclude \
+            examples/context_model_benchmark.cpp \
+            -o context-model-benchmark
       - name: Run AEC benchmark
         run: |
           ./effective-occurrence-benchmark \
             include/ae_compression/compressor.hpp /bin/ls | tee aec-results.csv
+      - name: Run contextual frequency benchmark
+        run: |
+          ./context-model-benchmark \
+            include/ae_compression/compressor.hpp /bin/ls | tee context-results.csv
       - name: Run competitor benchmark
         run: |
           python3 tools/benchmark_competitors.py | tee competitor-results.csv
@@ -37,5 +47,6 @@ jobs:
           name: effective-occurrence-results
           path: |
             aec-results.csv
+            context-results.csv
             competitor-results.csv
             benchmark-data/
