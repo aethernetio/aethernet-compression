@@ -98,6 +98,9 @@ jobs:
           g++ $CXXFLAGS -DCODEC_XZ $SOURCE $WRAPS \
             -Wl,-Bstatic -llzma -Wl,-Bdynamic -pthread -ldl \
             -o decoder-bin/xz
+          g++ $CXXFLAGS -DCODEC_LZ4_BLOCK $SOURCE $WRAPS \
+            -Wl,-Bstatic -llz4 -Wl,-Bdynamic \
+            -o decoder-bin/lz4-block
           g++ $CXXFLAGS -DCODEC_LZ4 $SOURCE $WRAPS \
             -Wl,-Bstatic -llz4 -Wl,-Bdynamic \
             -o decoder-bin/lz4
@@ -123,6 +126,8 @@ jobs:
             decoder-fixtures/original.bin xz_default_6 | tee -a decoder-memory.csv
           ./decoder-bin/xz decoder-fixtures/xz_64k.bin \
             decoder-fixtures/original.bin xz_64k | tee -a decoder-memory.csv
+          ./decoder-bin/lz4-block decoder-fixtures/lz4_block.bin \
+            decoder-fixtures/original.bin lz4_block | tee -a decoder-memory.csv
           ./decoder-bin/lz4 decoder-fixtures/lz4_frame.bin \
             decoder-fixtures/original.bin lz4_frame | tee -a decoder-memory.csv
 
@@ -140,7 +145,7 @@ jobs:
           baseline_file=$(stat -c%s decoder-bin/baseline)
           echo "codec,text_rodata_bytes,incremental_text_rodata_bytes,stripped_elf_bytes,incremental_stripped_elf_bytes" \
             | tee decoder-size.csv
-          for codec in baseline aegl zlib zstd brotli xz lz4; do
+          for codec in baseline aegl zlib zstd brotli xz lz4-block lz4; do
             sections=$(section_bytes decoder-bin/$codec)
             file_size=$(stat -c%s decoder-bin/$codec)
             echo "$codec,$sections,$((sections-baseline_sections)),$file_size,$((file_size-baseline_file))" \
