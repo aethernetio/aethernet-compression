@@ -266,7 +266,7 @@ void XzFree(void*, void* pointer) {
 bool DecodeCodec(std::uint8_t const* input, std::size_t input_size,
                  std::uint8_t* output, std::size_t output_size) {
   auto allocator = lzma_allocator{XzAllocate, XzFree, nullptr};
-  auto stream = lzma_stream{LZMA_STREAM_INIT};
+  lzma_stream stream = LZMA_STREAM_INIT;
   stream.allocator = &allocator;
   if (lzma_stream_decoder(&stream, UINT64_MAX, LZMA_CONCATENATED) != LZMA_OK) {
     return false;
