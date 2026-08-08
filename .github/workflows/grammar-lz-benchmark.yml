@@ -26,15 +26,25 @@ jobs:
           g++ -std=c++20 -O2 -Wall -Wextra -Werror -Iinclude \
             tests/grammar_lz_tests.cpp -o grammar-lz-tests
           ./grammar-lz-tests
-      - name: Build benchmark
+          g++ -std=c++20 -O2 -Wall -Wextra -Werror -Iinclude \
+            tests/grammar_lz_layout_tests.cpp -o grammar-lz-layout-tests
+          ./grammar-lz-layout-tests
+      - name: Build benchmarks
         run: |
           g++ -std=c++20 -O2 -Wall -Wextra -Werror -Iinclude \
             examples/grammar_lz_benchmark.cpp -lz -o grammar-lz-benchmark
+          g++ -std=c++20 -O2 -Wall -Wextra -Werror -Iinclude \
+            examples/grammar_lz_layout_benchmark.cpp -lz \
+            -o grammar-lz-layout-benchmark
       - name: Run grammar-lz benchmark
         run: |
           ./grammar-lz-benchmark \
             include/ae_compression/compressor.hpp /bin/ls \
             | tee grammar-lz-results.csv
+      - name: Run overlapping dictionary layout benchmark
+        run: |
+          ./grammar-lz-layout-benchmark benchmark-data/*.bin \
+            | tee grammar-lz-layout-results.csv
       - name: Run competitor benchmark
         run: |
           python3 tools/benchmark_competitors.py | tee competitor-results.csv
@@ -43,5 +53,6 @@ jobs:
           name: grammar-lz-results
           path: |
             grammar-lz-results.csv
+            grammar-lz-layout-results.csv
             competitor-results.csv
             benchmark-data/
