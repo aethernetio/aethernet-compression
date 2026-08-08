@@ -1,0 +1,162 @@
+name: compression-matrix-benchmark
+
+on:
+  push:
+    branches:
+      - experiment/exact-grammar-lz-oracle
+
+jobs:
+  matrix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          set -o pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            zlib1g-dev libzstd-dev libbrotli-dev liblzma-dev liblz4-dev
+          python3 -m pip install --break-system-packages brotli zstandard lz4
+
+      - name: Run repository tests
+        run: |
+          set -o pipefail
+          cmake -S . -B build -DAE_COMPRESSION_BUILD_TESTS=ON
+          cmake --build build --parallel
+          ctest --test-dir build --output-on-failure
+          python3 -m py_compile \
+            tools/exact_grammar_lz_oracle.py \
+            tools/compression_matrix_benchmark.py \
+            tools/generate_decoder_fixtures.py
+          python3 tools/exact_grammar_lz_oracle.py self-test
+
+      - name: Generate matrix datasets
+        run: |
+          set -o pipefail
+          python3 tools/compression_matrix_benchmark.py generate \
+            include/ae_compression/compressor.hpp /bin/ls matrix-data
+
+      - name: Benchmark exact short blocks
+        run: |
+          set -o pipefail
+          python3 tools/compression_matrix_benchmark.py blocks \
+            include/ae_compression/compressor.hpp /bin/ls \
+            --block-sizes 8,10,11 --max-blocks 64 \
+            | tee exact-block-matrix.csv
+
+      - name: Benchmark standard codecs on full files
+        run: |
+          set -o pipefail
+          python3 tools/compression_matrix_benchmark.py files matrix-data \
+            | tee standard-file-matrix.csv
+
+      - name: Benchmark heuristic AEGL and AEC on full files
+        run: |
+          set -o pipefail
+          g++ -std=c++20 -O2 -Wall -Wextra -Werror -Iinclude \
+            examples/compression_matrix_aegl.cpp \
+            -o compression-matrix-aegl
+          ./compression-matrix-aegl matrix-data/*.bin \
+            | tee aegl-file-matrix.csv
+
+      - name: Generate decoder fixtures
+        run: |
+          set -o pipefail
+          python3 tools/generate_decoder_fixtures.py decoder-fixtures \
+            | tee decoder-fixtures.csv
+          g++ -std=c++20 -O2 -Wall -Wextra -Werror -Iinclude \
+            examples/make_aegl_fixture.cpp -o make-aegl-fixture
+          ./make-aegl-fixture decoder-fixtures/original.bin \
+            decoder-fixtures/aegl.bin | tee aegl-fixture.csv
+
+      - name: Build decoder footprint binaries
+        run: |
+          set -o pipefail
+          mkdir -p decoder-bin
+          CXXFLAGS="-std=c++20 -Os -DNDEBUG -fno-exceptions -fno-rtti -ffunction-sections -fdata-sections -Ibench/decoder_footprint"
+          WRAPS="-Wl,--gc-sections -Wl,--wrap=malloc -Wl,--wrap=calloc -Wl,--wrap=realloc -Wl,--wrap=free -Wl,--wrap=aligned_alloc -Wl,--wrap=posix_memalign"
+          SOURCE=bench/decoder_footprint/decoder_bench.cpp
+
+          g++ $CXXFLAGS -DCODEC_BASELINE $SOURCE $WRAPS \
+            -o decoder-bin/baseline
+          g++ $CXXFLAGS -DCODEC_AEGL $SOURCE $WRAPS \
+            -o decoder-bin/aegl
+          g++ $CXXFLAGS -DCODEC_ZLIB $SOURCE $WRAPS \
+            -Wl,-Bstatic -lz -Wl,-Bdynamic \
+            -o decoder-bin/zlib
+          g++ $CXXFLAGS -DCODEC_ZSTD $SOURCE $WRAPS \
+            -Wl,-Bstatic -lzstd -Wl,-Bdynamic -pthread \
+            -o decoder-bin/zstd
+          g++ $CXXFLAGS -DCODEC_BROTLI $SOURCE $WRAPS \
+            -Wl,-Bstatic -lbrotlidec -lbrotlicommon -Wl,-Bdynamic -lm \
+            -o decoder-bin/brotli
+          g++ $CXXFLAGS -DCODEC_XZ $SOURCE $WRAPS \
+            -Wl,-Bstatic -llzma -Wl,-Bdynamic -pthread -ldl \
+            -o decoder-bin/xz
+          g++ $CXXFLAGS -DCODEC_LZ4 $SOURCE $WRAPS \
+            -Wl,-Bstatic -llz4 -Wl,-Bdynamic \
+            -o decoder-bin/lz4
+
+          strip --strip-all decoder-bin/*
+
+      - name: Measure decoder memory
+        run: |
+          set -o pipefail
+          echo "codec,compressed_bytes,output_bytes,caller_buffer_bytes,workspace_peak_bytes,workspace_live_after_decode,allocations,total_one_shot_bytes,ok" \
+            | tee decoder-memory.csv
+          ./decoder-bin/baseline decoder-fixtures/original.bin \
+            decoder-fixtures/original.bin baseline | tee -a decoder-memory.csv
+          ./decoder-bin/aegl decoder-fixtures/aegl.bin \
+            decoder-fixtures/original.bin aegl_minimal | tee -a decoder-memory.csv
+          ./decoder-bin/zlib decoder-fixtures/raw_deflate.bin \
+            decoder-fixtures/original.bin raw_deflate | tee -a decoder-memory.csv
+          ./decoder-bin/zstd decoder-fixtures/zstd_19.bin \
+            decoder-fixtures/original.bin zstd_19 | tee -a decoder-memory.csv
+          ./decoder-bin/brotli decoder-fixtures/brotli_11.bin \
+            decoder-fixtures/original.bin brotli_11 | tee -a decoder-memory.csv
+          ./decoder-bin/xz decoder-fixtures/xz_default_6.bin \
+            decoder-fixtures/original.bin xz_default_6 | tee -a decoder-memory.csv
+          ./decoder-bin/xz decoder-fixtures/xz_64k.bin \
+            decoder-fixtures/original.bin xz_64k | tee -a decoder-memory.csv
+          ./decoder-bin/lz4 decoder-fixtures/lz4_frame.bin \
+            decoder-fixtures/original.bin lz4_frame | tee -a decoder-memory.csv
+
+      - name: Measure decoder binary size
+        run: |
+          set -o pipefail
+          section_bytes() {
+            size -A "$1" | awk '
+              $1 ~ /^\.text/ || $1 ~ /^\.rodata/ || $1 ~ /^\.data\.rel\.ro/ {
+                sum += $2
+              }
+              END { print sum + 0 }'
+          }
+          baseline_sections=$(section_bytes decoder-bin/baseline)
+          baseline_file=$(stat -c%s decoder-bin/baseline)
+          echo "codec,text_rodata_bytes,incremental_text_rodata_bytes,stripped_elf_bytes,incremental_stripped_elf_bytes" \
+            | tee decoder-size.csv
+          for codec in baseline aegl zlib zstd brotli xz lz4; do
+            sections=$(section_bytes decoder-bin/$codec)
+            file_size=$(stat -c%s decoder-bin/$codec)
+            echo "$codec,$sections,$((sections-baseline_sections)),$file_size,$((file_size-baseline_file))" \
+              | tee -a decoder-size.csv
+          done
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: compression-matrix-results
+          path: |
+            exact-block-matrix.csv
+            standard-file-matrix.csv
+            aegl-file-matrix.csv
+            decoder-fixtures.csv
+            aegl-fixture.csv
+            decoder-memory.csv
+            decoder-size.csv
+            matrix-data/
+            decoder-fixtures/
