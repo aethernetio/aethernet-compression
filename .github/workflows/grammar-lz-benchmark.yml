@@ -9,20 +9,26 @@ jobs:
   benchmark:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
       - name: Install benchmark dependencies
         run: |
+          set -o pipefail
           sudo apt-get update
           sudo apt-get install -y zlib1g-dev
           python3 -m pip install --break-system-packages brotli zstandard
       - name: Run existing tests
         run: |
+          set -o pipefail
           cmake -S . -B build -DAE_COMPRESSION_BUILD_TESTS=ON
           cmake --build build --parallel
           ctest --test-dir build --output-on-failure
       - name: Build and run grammar-lz tests
         run: |
+          set -o pipefail
           g++ -std=c++20 -O2 -Wall -Wextra -Werror -Iinclude \
             tests/grammar_lz_tests.cpp -o grammar-lz-tests
           ./grammar-lz-tests
@@ -31,22 +37,27 @@ jobs:
           ./grammar-lz-layout-tests
       - name: Build benchmarks
         run: |
+          set -o pipefail
           g++ -std=c++20 -O2 -Wall -Wextra -Werror -Iinclude \
             examples/grammar_lz_benchmark.cpp -lz -o grammar-lz-benchmark
           g++ -std=c++20 -O2 -Wall -Wextra -Werror -Iinclude \
-            examples/grammar_lz_layout_benchmark.cpp -lz \
+            examples/grammar_lz_layout_benchmark_v2.cpp -lz \
             -o grammar-lz-layout-benchmark
       - name: Run grammar-lz benchmark
         run: |
+          set -o pipefail
           ./grammar-lz-benchmark \
             include/ae_compression/compressor.hpp /bin/ls \
             | tee grammar-lz-results.csv
       - name: Run overlapping dictionary layout benchmark
         run: |
-          ./grammar-lz-layout-benchmark benchmark-data/*.bin \
+          set -o pipefail
+          ./grammar-lz-layout-benchmark \
+            include/ae_compression/compressor.hpp /bin/ls \
             | tee grammar-lz-layout-results.csv
       - name: Run competitor benchmark
         run: |
+          set -o pipefail
           python3 tools/benchmark_competitors.py | tee competitor-results.csv
       - uses: actions/upload-artifact@v4
         with:
