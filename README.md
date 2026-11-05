@@ -1,126 +1,76 @@
 # Æthernet Compression
 
-`ae-compression` is an experimental tiny-message dictionary modeler for C++20
-projects. It creates a hierarchy of reusable symbols and can encode the
-resulting symbol payload with an arithmetic coder adapted from Project Nayuki's
-MIT-licensed reference implementation. It is not yet a complete self-contained
-bitstream compressor because metadata for the frequency table and rule layout is
-still stored separately.
+Experimental lossless compression with offline encoding and small decoders.
+The library is standalone and does not depend on the Æthernet client library.
 
-The intended shape is asymmetric: model building may be slow and expensive on a
-desktop or build server, while model expansion on a constrained target device
-stays small and predictable.
+## GPU reference: AEGL-64
 
-The library is standalone: it does not depend on the Æthernet client library.
+**One CUDA thread decodes one independent block into 64 bytes of shared memory.**
+Each thread receives the start and end offsets of its compressed payload. The
+32 threads of a warp decode 32 different blocks; they do not cooperate on one
+block. Shared history occupies **2 KiB per warp**.
 
-## Use Cases
+- [Decoder and shared-memory layout](include/ae_compression/aegl/block64.hpp):
+  no allocation, recursion, entropy tables, or separate history allocation.
+- [Host encoder](include/ae_compression/aegl/pack64.hpp): exact minimum-byte
+  LZ parse for this fixed-size, zero-prefix profile.
+- [CUDA example](examples/cuda/aegl64.cu): independent per-thread decoding,
+  interleaved shared-memory words, and roundtrip verification.
+- [Format, provenance, validation, and limitations](docs/GPU.md).
 
-- Analyze very small repeated messages where general-purpose compressors have
-  too much framing overhead.
-- Build a compact dictionary model for binary serialized client state on a
-  powerful machine, then ship a future entropy-coded frame to a device that only
-  needs decompression.
-- Experiment with dictionary structures before promoting a format into an
-  embedded protocol.
+This is a GPU-oriented **prototype**, not a claim of GPU throughput superiority,
+measured register usage, or compression of neural-network weights. CPU tests
+and CUDA compilation are distinct from runtime GPU validation. The CUDA example
+writes results to global memory for verification; it is not a fused inference
+benchmark. Compare against LZ4, Heatshrink, and ANS before drawing performance
+conclusions.
 
-## Integration
+AEGL-64 reuses the literal/backreference commands from experimental AEGL. The
+fixed-size profile removes per-block frame headers and forbids a dictionary
+prefix. **The offset table and batch metadata still cost space** and must be
+included in compression measurements. A raw 64-byte input can produce a 65-byte
+payload; there is no promise that every block shrinks.
 
-```cmake
-add_subdirectory(aethernet-compression)
-target_link_libraries(app PRIVATE ae-compression::ae-compression)
-```
+## Build and test
 
-```cpp
-#include <ae_compression/ae_compression.hpp>
-
-auto input = std::vector<std::uint8_t>{'a', 'b', 'c', 'a', 'b', 'c'};
-auto model = ae::compression::Compress(input);
-auto stats = ae::compression::Analyze(model, input.size());
-auto arithmetic_payload = ae::compression::arithmetic::EncodeModelPayload(model);
-auto output = ae::compression::Decompress(model);
-```
-
-For a target that only needs model expansion, include
-`ae_compression/decoder.hpp`. `ae_compression/format.hpp` currently stores the
-dictionary model in a simple self-describing frame; it is useful for tests and
-experiments, but it is not the final entropy-coded representation.
-
-## Design
-
-The compressor builds a hierarchy of dictionary rules:
-
-1. Find a repeated seed pattern across the main stream and existing rules.
-2. Extend the seed while the longer pattern still repeats.
-3. Replace non-overlapping occurrences with a rule symbol.
-4. Inline orphan or unprofitable rules and reindex the model.
-
-The model builder is intentionally greedy and slow. That is acceptable for the
-intended build-server/offline packing path. The decoder only expands a validated
-acyclic rule graph.
-
-## Wire Format
-
-The current experimental frames start with `AEC1` and a mode byte:
-
-- `0`: raw payload
-- `1`: serialized dictionary model
-
-The public `Encode` function uses raw fallback when the serialized dictionary
-model would not be smaller than a raw frame. This is a convenience wrapper for
-testing, not the final compression story. The key outputs today are
-`Analyze(model, original_size)`, which estimates entropy-coded size, and
-`arithmetic::EncodeModelPayload(model)`, which produces an actual arithmetic
-coded payload for the generated symbols.
-
-The arithmetic backend is adapted from
-[Project Nayuki's Reference arithmetic coding](https://github.com/nayuki/Reference-arithmetic-coding)
-under the MIT license.
-
-## Build And Test
-
-```bash
+```sh
 cmake -S . -B build -DAE_COMPRESSION_BUILD_TESTS=ON
-cmake --build build
+cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ```
 
-Example packer:
+The AEGL-64 headers and standalone host test need only C++17:
 
-```bash
-cmake --build build --target ae-compression-pack
-./build/ae-compression-pack input.bin output.aec
+```sh
+c++ -std=c++17 -O2 -Iinclude tests/aegl_block64_tests.cpp -o aegl64-tests
+./aegl64-tests
 ```
 
-Repeating-text analysis with zlib level 9 comparison:
+With a CUDA toolkit, select the architecture for the intended GPU:
 
-```bash
-cmake -S . -B build -DAE_COMPRESSION_BUILD_ZLIB_BENCHMARK=ON
-cmake --build build --target ae-compression-repeating-benchmark
-./build/ae-compression-repeating-benchmark
+```sh
+nvcc -std=c++17 -O3 -arch=sm_80 -Xptxas=-v -Iinclude \
+  examples/cuda/aegl64.cu -o aegl64-cuda
+./aegl64-cuda
 ```
 
-Real-file analysis with zlib level 9 comparison:
+The example exits with code 77 when no CUDA device is available. The `aegl64`
+workflow compiles CUDA but does not run it on GPU hardware.
 
-```bash
-cmake --build build --target ae-compression-file-benchmark
-./build/ae-compression-file-benchmark README.md include/ae_compression/compressor.hpp
-```
+## Original AEC API
 
-## Naming
+The existing C++20 dictionary/arithmetic implementation and targets remain
+available and unchanged. Include `ae_compression/ae_compression.hpp` and link
+`ae-compression::ae-compression`. `Encode` produces a self-contained AEC1
+arithmetic-dictionary frame or falls back to raw data; `Decode` reconstructs it.
+The recursive model-expansion API is separate from the AEGL-64 GPU path.
 
-Suggested repository name: `aethernet-compression`.
-
-Suggested CMake target and include:
-
-- `ae-compression::ae-compression`
-- `#include <ae_compression/ae_compression.hpp>`
-
-Other reasonable repository names if you want a narrower positioning:
-
-- `aethernet-dict-compression`
-- `ae-small-compression`
-- `aethernet-state-compression`
+The original file and repeating-text examples compare AEC against zlib.
+They are not AEGL-64 GPU benchmarks. Full grammar search, contextual entropy
+experiments, and historical benchmark workflows remain on the experimental
+branches; they are not silently presented as this fixed-block codec.
 
 ## License
 
-Apache License 2.0.
+Apache License 2.0. The existing arithmetic backend includes an adaptation of
+Project Nayuki's MIT-licensed reference arithmetic coder; see source notices.

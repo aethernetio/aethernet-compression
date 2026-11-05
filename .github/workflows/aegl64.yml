@@ -1,0 +1,29 @@
+name: aegl64
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  host:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        compiler: [g++, clang++]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Host correctness and layout
+        run: |
+          ${{ matrix.compiler }} -std=c++17 -O2 -DNDEBUG -Wall -Wextra -Werror -Iinclude tests/aegl_block64_tests.cpp -o /tmp/aegl64-tests
+          /tmp/aegl64-tests
+      - name: Address and undefined-behavior sanitizers
+        run: |
+          ${{ matrix.compiler }} -std=c++17 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -Iinclude tests/aegl_block64_tests.cpp -o /tmp/aegl64-sanitized
+          /tmp/aegl64-sanitized
+  cuda-compile:
+    runs-on: ubuntu-latest
+    container: nvidia/cuda:12.8.1-devel-ubuntu24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile CUDA and report ptxas resources (no GPU runtime)
+        run: nvcc -std=c++17 -O3 -arch=sm_80 -Xptxas=-v -Iinclude examples/cuda/aegl64.cu -o /tmp/aegl64-cuda
